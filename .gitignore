@@ -81,3 +81,15 @@ memory/test_credentials.md
 # Mobile development
 android-sdk/runtimes/jdk-21.0.12+8-jre/lib/modules
 runtimes/jdk-21.0.12+8-jre/lib/modules
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime files
+runtimes/
+
+# Dependency lockfiles generated locally
+yarn.lock
+frontend/yarn.lock
