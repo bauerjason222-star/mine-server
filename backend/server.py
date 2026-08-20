@@ -1,10 +1,11 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 import os
+import asyncio
 import logging
 import uuid
 import threading
@@ -47,6 +48,12 @@ class ServerCreate(BaseModel):
 class ServerUpdate(BaseModel):
     name: Optional[str] = None
     ram_mb: Optional[int] = None
+    auto_restart: Optional[bool] = None
+
+
+class PlayerActionBody(BaseModel):
+    name: str
+    reason: Optional[str] = ""
 
 
 class PropertiesUpdate(BaseModel):
@@ -78,6 +85,7 @@ def public_server(s: dict) -> dict:
         "loader_version": s.get("loader_version"),
         "ram_mb": s.get("ram_mb", 1024),
         "port": s["port"],
+        "auto_restart": s.get("auto_restart", False),
         "created_at": s.get("created_at"),
         "properties": s.get("properties", {}),
         "status": state["status"],
@@ -140,6 +148,7 @@ async def create_server(body: ServerCreate):
         "ram_mb": max(512, int(body.ram_mb)),
         "port": port,
         "properties": default_properties(),
+        "auto_restart": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "jar": None,
         "start_type": "jar",
@@ -174,6 +183,11 @@ async def update_server(server_id: str, body: ServerUpdate):
         updates["name"] = body.name
     if body.ram_mb is not None:
         updates["ram_mb"] = max(512, int(body.ram_mb))
+    if body.auto_restart is not None:
+        updates["auto_restart"] = bool(body.auto_restart)
+        rt = mc.RUNTIME.get(server_id)
+        if rt:
+            rt["auto_restart"] = bool(body.auto_restart)
     if updates:
         await db.servers.update_one({"id": server_id}, {"$set": updates})
         s.update(updates)
@@ -261,6 +275,74 @@ async def command(server_id: str, body: CommandBody):
     if not res["ok"]:
         raise HTTPException(400, res["error"])
     return {"ok": True}
+
+
+# --- players (whitelist / ops / bans) ---
+@api_router.get("/servers/{server_id}/players")
+async def players_list(server_id: str):
+    s = await get_server_or_404(server_id)
+    return mc.get_player_lists(s)
+
+
+@api_router.post("/servers/{server_id}/players/{list_type}")
+async def players_add(server_id: str, list_type: str, body: PlayerActionBody):
+    if list_type not in ("whitelist", "ops", "banned"):
+        raise HTTPException(400, "Invalid list type")
+    s = await get_server_or_404(server_id)
+    res = mc.player_action(s, list_type, body.name, "add", body.reason or "")
+    if not res["ok"]:
+        raise HTTPException(400, res["error"])
+    return mc.get_player_lists(s)
+
+
+@api_router.delete("/servers/{server_id}/players/{list_type}/{name}")
+async def players_remove(server_id: str, list_type: str, name: str):
+    if list_type not in ("whitelist", "ops", "banned"):
+        raise HTTPException(400, "Invalid list type")
+    s = await get_server_or_404(server_id)
+    res = mc.player_action(s, list_type, name, "remove")
+    if not res["ok"]:
+        raise HTTPException(400, res["error"])
+    return mc.get_player_lists(s)
+
+
+@api_router.post("/servers/{server_id}/players/kick/{name}")
+async def players_kick(server_id: str, name: str):
+    await get_server_or_404(server_id)
+    res = mc.kick_player(server_id, name)
+    if not res["ok"]:
+        raise HTTPException(400, res["error"])
+    return {"ok": True}
+
+
+# --- realtime console over WebSocket ---
+@api_router.websocket("/servers/{server_id}/ws")
+async def console_ws(websocket: WebSocket, server_id: str):
+    await websocket.accept()
+    since = 0
+    try:
+        while True:
+            data = mc.get_logs(server_id, since)
+            if data["lines"]:
+                since = data["last"]
+            state = mc.get_state(server_id)
+            await websocket.send_json({
+                "lines": data["lines"],
+                "last": data["last"],
+                "status": data["status"],
+                "metrics": mc.get_metrics(server_id),
+                "players": state["players"],
+                "message": state["message"],
+            })
+            await asyncio.sleep(0.4)
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        return
 
 
 # --- mods ---

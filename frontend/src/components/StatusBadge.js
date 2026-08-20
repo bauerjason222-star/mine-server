@@ -6,6 +6,7 @@ const CONFIG = {
   running: { label: "Running", dot: "bg-emerald-400", text: "text-emerald-400", ring: "ring-emerald-400/30", pulse: true },
   stopping: { label: "Stopping", dot: "bg-orange-400", text: "text-orange-400", ring: "ring-orange-400/30", pulse: true },
   stopped: { label: "Stopped", dot: "bg-slate-500", text: "text-slate-400", ring: "ring-slate-500/20", pulse: false },
+  crashed: { label: "Crashed", dot: "bg-red-500", text: "text-red-400", ring: "ring-red-500/30", pulse: true },
   error: { label: "Error", dot: "bg-red-500", text: "text-red-400", ring: "ring-red-500/30", pulse: false },
 };
 

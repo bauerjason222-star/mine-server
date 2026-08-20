@@ -5,15 +5,18 @@ import { toast } from "sonner";
 import StatusBadge from "@/components/StatusBadge";
 import ConsoleTab from "@/components/tabs/ConsoleTab";
 import SettingsTab from "@/components/tabs/SettingsTab";
+import PlayersTab from "@/components/tabs/PlayersTab";
 import ModsTab from "@/components/tabs/ModsTab";
 import BackupsTab from "@/components/tabs/BackupsTab";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Square, RotateCw, Trash2, ArrowLeft, Terminal, Settings, Package, HardDrive, Loader2 } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, ArrowLeft, Terminal, Settings, Package, HardDrive, Loader2, Users, RefreshCcw } from "lucide-react";
 
 export default function ServerDetail() {
   const { id } = useParams();
@@ -64,7 +67,18 @@ export default function ServerDetail() {
   }
 
   const isRunning = ["running", "starting"].includes(server.status);
-  const canStart = ["stopped", "error"].includes(server.status);
+  const canStart = ["stopped", "error", "crashed"].includes(server.status);
+
+  const toggleAutoRestart = async (val) => {
+    setServer((s) => ({ ...s, auto_restart: val }));
+    try {
+      await api.put(`/servers/${id}`, { auto_restart: val });
+      toast.success(val ? "Auto-restart enabled" : "Auto-restart disabled");
+    } catch {
+      toast.error("Could not update");
+      load();
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -129,6 +143,18 @@ export default function ServerDetail() {
               <Loader2 className="h-4 w-4 animate-spin" /> Installing server files… check the console for progress.
             </div>
           )}
+          {server.status === "crashed" && (
+            <div data-testid="crashed-banner" className="mt-3 flex items-center gap-2 rounded-lg border border-red-900/50 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              <RefreshCcw className="h-4 w-4" /> {server.message || "Server crashed unexpectedly."}
+              {server.auto_restart ? " Auto-restart is enabled." : " Enable auto-restart to recover automatically."}
+            </div>
+          )}
+          <div className="mt-3 flex items-center gap-2.5">
+            <Switch data-testid="auto-restart-switch" checked={!!server.auto_restart} onCheckedChange={toggleAutoRestart} />
+            <Label className="text-sm text-slate-400 cursor-pointer flex items-center gap-1.5">
+              <RefreshCcw className="h-3.5 w-3.5" /> Auto-restart on crash
+            </Label>
+          </div>
         </div>
       </header>
 
@@ -140,6 +166,9 @@ export default function ServerDetail() {
             </TabsTrigger>
             <TabsTrigger value="settings" data-testid="tab-settings" className="data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-400 gap-1.5">
               <Settings className="h-4 w-4" /> Settings
+            </TabsTrigger>
+            <TabsTrigger value="players" data-testid="tab-players" className="data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-400 gap-1.5">
+              <Users className="h-4 w-4" /> Players
             </TabsTrigger>
             <TabsTrigger value="mods" data-testid="tab-mods" className="data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-400 gap-1.5">
               <Package className="h-4 w-4" /> {server.type === "paper" ? "Plugins" : "Mods"}
@@ -154,6 +183,9 @@ export default function ServerDetail() {
           </TabsContent>
           <TabsContent value="settings" className="mt-5">
             <SettingsTab server={server} />
+          </TabsContent>
+          <TabsContent value="players" className="mt-5">
+            <PlayersTab server={server} />
           </TabsContent>
           <TabsContent value="mods" className="mt-5">
             <ModsTab server={server} />

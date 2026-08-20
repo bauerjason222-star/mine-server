@@ -14,31 +14,57 @@ export default function ConsoleTab({ server }) {
   const inFlightRef = useRef(false);
   const scrollRef = useRef(null);
   const autoScroll = useRef(true);
+  const [live, setLive] = useState(false);
+
+  const mergeData = useCallback((d) => {
+    if (d.lines?.length) {
+      const fresh = d.lines.filter((l) => !seenRef.current.has(l.i));
+      fresh.forEach((l) => seenRef.current.add(l.i));
+      if (d.last) sinceRef.current = d.last;
+      if (fresh.length) setLines((prev) => [...prev, ...fresh].slice(-1500));
+    }
+    setMetrics(d.metrics || { cpu: 0, memory_mb: 0 });
+    setPlayers(d.players || []);
+  }, []);
 
   const poll = useCallback(async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
       const r = await api.get(`/servers/${server.id}/console`, { params: { since: sinceRef.current } });
-      if (r.data.lines?.length) {
-        sinceRef.current = r.data.last;
-        const fresh = r.data.lines.filter((l) => !seenRef.current.has(l.i));
-        fresh.forEach((l) => seenRef.current.add(l.i));
-        if (fresh.length) setLines((prev) => [...prev, ...fresh].slice(-1500));
-      }
-      setMetrics(r.data.metrics || { cpu: 0, memory_mb: 0 });
-      setPlayers(r.data.players || []);
+      mergeData(r.data);
     } catch (e) { /* ignore */ } finally {
       inFlightRef.current = false;
     }
-  }, [server.id]);
+  }, [server.id, mergeData]);
 
   useEffect(() => {
     setLines([]); sinceRef.current = 0; seenRef.current = new Set();
-    poll();
-    const t = setInterval(poll, 1500);
-    return () => clearInterval(t);
-  }, [poll]);
+    let ws = null, poller = null, closed = false;
+    const startPolling = () => {
+      if (poller || closed) return;
+      setLive(false);
+      poll();
+      poller = setInterval(poll, 1500);
+    };
+    try {
+      const base = (process.env.REACT_APP_BACKEND_URL || "").replace(/^http/, "ws");
+      ws = new WebSocket(`${base}/api/servers/${server.id}/ws`);
+      ws.onopen = () => setLive(true);
+      ws.onmessage = (e) => { try { mergeData(JSON.parse(e.data)); } catch (err) { /* ignore */ } };
+      ws.onerror = () => startPolling();
+      ws.onclose = () => { if (!closed) startPolling(); };
+    } catch (e) { startPolling(); }
+    const safety = setTimeout(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+    }, 3500);
+    return () => {
+      closed = true;
+      clearTimeout(safety);
+      if (poller) clearInterval(poller);
+      if (ws) { ws.onclose = null; try { ws.close(); } catch (e) { /* ignore */ } }
+    };
+  }, [server.id, poll, mergeData]);
 
   useEffect(() => {
     if (autoScroll.current && scrollRef.current) {
@@ -80,6 +106,13 @@ export default function ConsoleTab({ server }) {
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
       <div className="lg:col-span-3">
         <div className="rounded-xl border border-slate-800 bg-[#08090c] overflow-hidden flex flex-col" style={{ height: "60vh" }}>
+          <div className="flex items-center justify-between border-b border-slate-800 bg-black/40 px-4 py-2">
+            <span className="text-xs font-mono text-slate-500">console</span>
+            <span data-testid="console-live-indicator" className="inline-flex items-center gap-1.5 text-[11px] font-medium">
+              <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400 pulse-dot" : "bg-slate-600"}`} />
+              <span className={live ? "text-emerald-400" : "text-slate-500"}>{live ? "LIVE" : "polling"}</span>
+            </span>
+          </div>
           <div ref={scrollRef} onScroll={onScroll}
             data-testid="console-output"
             className="flex-1 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed">

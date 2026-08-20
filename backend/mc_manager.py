@@ -5,6 +5,7 @@ import glob
 import json
 import time
 import shutil
+import hashlib
 import zipfile
 import threading
 import subprocess
@@ -104,6 +105,10 @@ def _ensure_runtime(server_id: str):
             "players": set(),
             "thread": None,
             "message": "",
+            "intentional_stop": False,
+            "auto_restart": False,
+            "restart_count": 0,
+            "server": None,
         }
     return RUNTIME[server_id]
 
@@ -294,6 +299,7 @@ def _reader_thread(server_id: str, proc):
         if _DONE_RE.search(line):
             rt["status"] = "running"
             rt["message"] = "Running"
+            rt["restart_count"] = 0
         m = _JOIN_RE.search(line)
         if m:
             rt["players"].add(m.group(1))
@@ -301,14 +307,34 @@ def _reader_thread(server_id: str, proc):
         if m:
             rt["players"].discard(m.group(1))
     proc.wait()
-    rt["status"] = "stopped"
+    code = proc.returncode
+    intentional = rt.get("intentional_stop")
     rt["players"] = set()
     rt["process"] = None
-    rt["message"] = "Stopped"
-    _log(server_id, "=== Server process exited. ===")
+    if intentional:
+        rt["status"] = "stopped"
+        rt["message"] = "Stopped"
+        _log(server_id, "=== Server stopped. ===")
+    else:
+        rt["status"] = "crashed"
+        rt["message"] = f"Crashed (exit code {code})"
+        _log(server_id, f"=== Server crashed unexpectedly (exit code {code}). ===")
+        if rt.get("auto_restart") and rt.get("restart_count", 0) < 3:
+            rt["restart_count"] = rt.get("restart_count", 0) + 1
+            n = rt["restart_count"]
+            _log(server_id, f"[auto-restart] Attempt {n}/3 — restarting in 5s...")
+
+            def _auto():
+                time.sleep(5)
+                if rt.get("status") == "crashed" and rt.get("server"):
+                    start_server(rt["server"], manual=False)
+
+            threading.Thread(target=_auto, daemon=True).start()
+        elif rt.get("auto_restart"):
+            _log(server_id, "[auto-restart] Giving up after 3 failed attempts.")
 
 
-def start_server(server: dict):
+def start_server(server: dict, manual: bool = True):
     sid = server["id"]
     rt = _ensure_runtime(sid)
     if rt["status"] in ("starting", "running"):
@@ -334,6 +360,11 @@ def start_server(server: dict):
     rt["status"] = "starting"
     rt["message"] = "Starting..."
     rt["players"] = set()
+    rt["intentional_stop"] = False
+    rt["auto_restart"] = bool(server.get("auto_restart", False))
+    rt["server"] = server
+    if manual:
+        rt["restart_count"] = 0
     _log(sid, f"=== Starting server: {' '.join(cmd)} ===")
     try:
         proc = subprocess.Popen(
@@ -372,6 +403,7 @@ def stop_server(server_id: str):
         return {"ok": False, "error": "Server not running"}
     rt["status"] = "stopping"
     rt["message"] = "Stopping..."
+    rt["intentional_stop"] = True
     _log(server_id, "=== Stopping server... ===")
     proc = rt["process"]
     try:
@@ -550,3 +582,132 @@ def restore_backup(server: dict, name: str, level_name: str = "world"):
     with zipfile.ZipFile(f, "r") as z:
         z.extractall(sdir)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Player management (whitelist / ops / bans)
+# ---------------------------------------------------------------------------
+def _offline_uuid(name: str) -> str:
+    data = ("OfflinePlayer:" + name).encode("utf-8")
+    h = bytearray(hashlib.md5(data).digest())
+    h[6] = (h[6] & 0x0f) | 0x30  # version 3
+    h[8] = (h[8] & 0x3f) | 0x80  # variant
+    b = bytes(h)
+    return f"{b[0:4].hex()}-{b[4:6].hex()}-{b[6:8].hex()}-{b[8:10].hex()}-{b[10:16].hex()}"
+
+
+def resolve_profile(name: str):
+    """Return (uuid, canonical_name). Tries Mojang, falls back to offline UUID."""
+    try:
+        r = requests.get(f"https://api.mojang.com/users/profiles/minecraft/{name}",
+                         headers=UA, timeout=8)
+        if r.status_code == 200 and r.text.strip():
+            d = r.json()
+            raw = d["id"]
+            uid = f"{raw[0:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:32]}"
+            return uid, d["name"]
+    except Exception:
+        pass
+    return _offline_uuid(name), name
+
+
+def _read_json_file(path: Path):
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text() or "[]")
+    except Exception:
+        return []
+
+
+def _write_json_file(path: Path, data):
+    path.write_text(json.dumps(data, indent=2))
+
+
+def get_player_lists(server: dict):
+    sdir = SERVERS_DIR / server["id"]
+    whitelist = _read_json_file(sdir / "whitelist.json")
+    ops = _read_json_file(sdir / "ops.json")
+    banned = _read_json_file(sdir / "banned-players.json")
+    online = sorted(RUNTIME.get(server["id"], {}).get("players", set()))
+    return {
+        "whitelist": [{"name": e.get("name"), "uuid": e.get("uuid")} for e in whitelist],
+        "ops": [{"name": e.get("name"), "uuid": e.get("uuid"), "level": e.get("level", 4)} for e in ops],
+        "banned": [{"name": e.get("name"), "uuid": e.get("uuid"), "reason": e.get("reason", "")} for e in banned],
+        "online": online,
+        "whitelist_enabled": str(server.get("properties", {}).get("white-list", "false")).lower() == "true",
+    }
+
+
+def _is_running(server_id: str) -> bool:
+    rt = RUNTIME.get(server_id)
+    return bool(rt and rt.get("process") and rt["status"] in ("running", "starting"))
+
+
+def player_action(server: dict, list_type: str, name: str, action: str, reason: str = ""):
+    """list_type: whitelist|ops|banned ; action: add|remove"""
+    sid = server["id"]
+    sdir = SERVERS_DIR / sid
+    name = name.strip()
+    if not name:
+        return {"ok": False, "error": "Name required"}
+
+    if _is_running(sid):
+        cmd = None
+        if list_type == "whitelist":
+            cmd = f"whitelist {'add' if action == 'add' else 'remove'} {name}"
+        elif list_type == "ops":
+            cmd = f"{'op' if action == 'add' else 'deop'} {name}"
+        elif list_type == "banned":
+            cmd = (f"ban {name} {reason}".strip() if action == "add" else f"pardon {name}")
+        if cmd:
+            send_command(sid, cmd)
+            if list_type == "whitelist" and action == "add":
+                send_command(sid, "whitelist reload")
+            time.sleep(0.6)
+            return {"ok": True}
+        return {"ok": False, "error": "Unknown list"}
+
+    # Offline: edit json files directly
+    uid, cname = resolve_profile(name)
+    if list_type == "whitelist":
+        path = sdir / "whitelist.json"
+        data = _read_json_file(path)
+        if action == "add":
+            if not any(e.get("uuid") == uid for e in data):
+                data.append({"uuid": uid, "name": cname})
+        else:
+            data = [e for e in data if e.get("name", "").lower() != name.lower()]
+        _write_json_file(path, data)
+    elif list_type == "ops":
+        path = sdir / "ops.json"
+        data = _read_json_file(path)
+        if action == "add":
+            if not any(e.get("uuid") == uid for e in data):
+                data.append({"uuid": uid, "name": cname, "level": 4, "bypassesPlayerLimit": False})
+        else:
+            data = [e for e in data if e.get("name", "").lower() != name.lower()]
+        _write_json_file(path, data)
+    elif list_type == "banned":
+        path = sdir / "banned-players.json"
+        data = _read_json_file(path)
+        if action == "add":
+            if not any(e.get("uuid") == uid for e in data):
+                data.append({
+                    "uuid": uid, "name": cname,
+                    "created": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000"),
+                    "source": "MineHost", "expires": "forever",
+                    "reason": reason or "Banned by an operator.",
+                })
+        else:
+            data = [e for e in data if e.get("name", "").lower() != name.lower()]
+        _write_json_file(path, data)
+    else:
+        return {"ok": False, "error": "Unknown list"}
+    return {"ok": True}
+
+
+def kick_player(server_id: str, name: str):
+    if not _is_running(server_id):
+        return {"ok": False, "error": "Server is not running"}
+    return send_command(server_id, f"kick {name}")

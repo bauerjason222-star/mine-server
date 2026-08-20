@@ -26,6 +26,11 @@ Erstelle mir eine Minecraft Host App für Linux, wo ich Server erstellen, bearbe
 - World backups: create (zip world dirs), list, restore, delete.
 - Verified E2E: Paper 1.21.4 install → start ("Done!") → command → mods → stop → delete. Backend 18/18 pytest passed.
 
+## Update (2026-08-20 #2)
+- **Player Management tab**: whitelist / operators / banned players UI per server. Add by name (Mojang UUID lookup with offline-UUID fallback), remove, kick online players. Edits live via server commands when running, or edits whitelist.json/ops.json/banned-players.json directly when stopped. Verified: real Mojang UUIDs resolved (Notch, jeb_).
+- **Crash detection + auto-restart**: `_reader_thread` distinguishes intentional stop vs crash (exit code). Shows "crashed" status + banner. Per-server `auto_restart` toggle auto-recovers up to 3 attempts (5s backoff), resets on successful "Done". Verified E2E by killing the java process.
+- **Realtime console via WebSocket**: `GET /api/servers/{id}/ws` streams logs/status/metrics/players every 400ms (in-process, no HTTP round-trips). Frontend shows LIVE indicator; falls back to REST polling if WS closes. Verified WS handshake + messages.
+
 ## Known Notes / Limitations
 - External players cannot connect through the preview ingress (port 25565 not exposed); the server process genuinely runs — works fully on a real Linux host.
 - Status is in-memory; on backend restart running servers show "stopped" (java process is killed by supervisor).
