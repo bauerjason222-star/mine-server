@@ -1,0 +1,66 @@
+{
+  "summary": "Full backend + frontend E2E testing of MineHost. Backend: 18/18 pytest tests passed via the public ingress URL (versions for all 4 types, property-schema, real Paper 1.21.4 install -> stopped, start -> running with real 'Done (' console line and memory_mb>0, 'list' command, Modrinth plugin search/install/list/delete, properties GET/PUT persistence, backup create/list/delete, stop, delete + 404 verification, 400/404 negative cases). Frontend: dashboard empty state, create wizard (name -> type Paper -> version 1.21.4 -> RAM slider -> create + toast + card), ServerDetail with all 4 tabs, 32 grouped settings fields with save-persist toast, Modrinth search (21 results), start->Running badge with real server logs, console command echo/response, backup creation, stop->Stopped, delete via UI -> empty state. All test servers cleaned up (DB list is [] and /app/servers is empty). One real backend defect found (install metadata never persisted to Mongo) plus a console-log duplication bug and a settings sticky-header overlap.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/servers (background install thread in server.py:146-159)",
+        "issue": "The install thread calls asyncio.new_event_loop().run_until_complete(db.servers.update_one(...)) on the Motor client bound to the app loop -> raises 'ValueError: The future belongs to a different loop than the one specified as the loop argument' on EVERY create (confirmed in /var/log/supervisor/backend.err.log). Consequence: jar, start_type, forge_args and loader_version are NEVER saved. Paper/Vanilla/Fabric survive only because start_server() falls back to defaults ('server.jar'/'jar'), but FORGE servers will fail to start (start_type stays 'jar', jar is None -> looks for non-existent server.jar), and loader_version is always null in the API/UI. Fix: use asyncio.run_coroutine_threadsafe against the running loop, or run install via a FastAPI BackgroundTask / a dedicated Motor client created inside the thread's loop.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "Runtime state (mc_manager.RUNTIME)",
+        "issue": "Status is in-memory only. Observed once during testing that supervisor restarted all services (frontend returned Cloudflare 502 for ~1 min) while a 1536MB Java server was running; the java process was killed and the server silently showed 'stopped' with no record of the crash. Consider reconciling orphaned/killed processes and surfacing a 'crashed' state."
+      },
+      {
+        "endpoint": "GET /api/servers/{id}/mods/search",
+        "issue": "No pagination/limit params exposed (hard-coded limit=30) and no server-side caching; each keystroke-triggered search hits Modrinth directly (rate-limit risk)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ConsoleTab",
+        "issue": "Console output is duplicated on mount: the effect runs twice (React StrictMode) issuing two concurrent polls with since=0 before sinceRef is updated, so the first log batch is appended twice. Visible as repeated '=== Installing paper 1.21.4 ===' blocks and React console errors 'Encountered two children with the same key 1/2/3/4'. Fix: guard with an in-flight ref or de-duplicate by line index when merging.",
+        "selector": "[data-testid=\"console-output\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "ServerDetail > Settings tab",
+        "issues": [
+          "The sticky header row ('Fine-tune every aspect of your server.' + Save Changes) has no background/blur, so on scroll it overlaps and visually collides with the section titles (e.g. 'Gameplay') - see attached behaviour. Add bg-slate-950/90 + backdrop-blur + padding to the sticky bar.",
+          "Accessibility: DialogContent in CreateServerWizard is missing a Description/aria-describedby (React warning logged)."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix the Motor cross-event-loop write in the install background thread so jar/start_type/forge_args/loader_version persist (blocks Forge servers entirely).",
+    "After the fix, test a Forge server create+start end-to-end (currently untestable/expected to fail).",
+    "De-duplicate console log lines in ConsoleTab (StrictMode double poll with since=0).",
+    "Give the Settings tab sticky action bar a solid background so it stops overlapping section headings."
+  ],
+  "critical_code_review_comments": [
+    "server.py:146-159 - never create a new event loop for a Motor client owned by another loop; use asyncio.run_coroutine_threadsafe(coro, main_loop) or a thread-local AsyncIOMotorClient/pymongo client.",
+    "mc_manager.RUNTIME is process-local; a restart loses status and orphans java processes. Consider persisting pid and reconciling on startup.",
+    "next_port() reads all servers each create without a uniqueness constraint - two concurrent creates can get the same port (no index on port).",
+    "ConsoleTab poll() has no in-flight guard, causing duplicate appends and duplicate React keys."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (18/18 pytest, excluding Forge which is not covered)", "frontend": "95% (all flows pass; console duplication + settings sticky overlap)"},
+  "seed_data_creation": "Created and deleted TEST_paper_qa (API) and TEST_UI_Server (UI). Both removed; GET /api/servers returns [] and /app/servers is empty.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "N/A - app has no auth",
+  "context_for_next_testing_agent": "Regression suite at /app/backend/tests/backend_test.py: TestMeta (read-only, fast) + TestLifecycle (real Paper 1.21.4 install->start->command->backup->stop->delete, ~65s, runs on its own xdist worker). Run: cd /app/backend && python -m pytest tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Only ONE real java server at a time (1.5GB); always stop+delete. Forge lifecycle is NOT covered and is expected to fail until the install-metadata persistence bug is fixed - add a forge test after. UI testids confirmed on detail page: back-btn, status-badge-{status}, start/stop/restart/delete-server-btn, tab-console/settings/mods/backups, console-output, console-command-input, mod-search-input/btn, mod-result-{slug}, install-mod-{slug}, setting-{key}, save-settings-btn(+ -bottom), create-backup-btn.",
+  "rca_of_the_issue": "Install metadata loss: create_server spawns a daemon thread that builds a brand-new asyncio loop and awaits a coroutine created by the Motor client attached to uvicorn's loop; asyncio.ensure_future rejects the cross-loop future, so the update_one never executes and the thread dies with ValueError. Reproduce: POST /api/servers then tail /var/log/supervisor/backend.err.log; then query mongo - jar/start_type/loader_version remain null. Impact is masked for jar-based types by start_server defaults but is fatal for Forge. Console duplication: ConsoleTab's effect fires twice under StrictMode and both invocations poll with since=0 before sinceRef.current is updated, so identical lines (i=1..4) are appended twice."
+}

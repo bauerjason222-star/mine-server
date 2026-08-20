@@ -1,0 +1,2 @@
+cron=3.0pl1-162
+openjdk-17-jre-headless=17.0.20+8-1~deb12u1

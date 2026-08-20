@@ -1,0 +1,108 @@
+{
+  "theme_strategy": "dark_only",
+  "archetype": "Electric & Neon (Gaming Variant)",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "Outfit",
+      "mono": "JetBrains Mono"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-black text-slate-50",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold text-slate-50",
+      "h3": "text-xl sm:text-2xl font-bold text-slate-100",
+      "body": "text-base leading-relaxed text-slate-300",
+      "small": "text-sm text-slate-400 tracking-wide",
+      "console": "text-sm font-mono text-emerald-400 leading-tight"
+    }
+  },
+  "colors": {
+    "background": {
+      "base": "bg-slate-950",
+      "surface": "bg-slate-900",
+      "elevated": "bg-slate-800",
+      "console": "bg-[#0A0A0A]"
+    },
+    "accents": {
+      "primary": "bg-emerald-500 hover:bg-emerald-400 text-slate-950",
+      "secondary": "bg-blue-600 hover:bg-blue-500 text-white",
+      "destructive": "bg-red-500 hover:bg-red-400 text-white",
+      "warning": "bg-amber-500 text-slate-950",
+      "outline": "border-emerald-500 text-emerald-500 hover:bg-emerald-500/10"
+    },
+    "text": {
+      "primary": "text-slate-50",
+      "secondary": "text-slate-300",
+      "muted": "text-slate-500",
+      "inverse": "text-slate-950"
+    },
+    "borders": "border-slate-800"
+  },
+  "spacing_and_layout": {
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8",
+    "bento_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "server_list": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
+    "card_padding": "p-6",
+    "surface_styles": {
+      "dashboard_card": "bg-slate-900 border border-slate-800 rounded-xl shadow-sm hover:-translate-y-1 hover:shadow-lg transition-transform duration-200",
+      "console_panel": "bg-[#0A0A0A] border border-slate-800 rounded-xl p-4 overflow-hidden relative flex flex-col h-full",
+      "glass_header": "backdrop-blur-xl bg-slate-950/80 border-b border-slate-800 sticky top-0 z-50"
+    }
+  },
+  "components": {
+    "navigation": "Sticky sidebar or top navigation using glass_header style. Include branding, breadcrumbs, and user controls.",
+    "buttons": "Rounded-md with subtle scale on click. Active states must have higher contrast.",
+    "status_badge": "Small pill badge with a pulsing dot indicator (Emerald for Running, Red for Stopped, Amber for Starting).",
+    "tabs": "Use shadcn Tabs. Styled with a frosted background or subtle border-bottom active states. Override h-9 to h-auto.",
+    "console_input": "Borderless input field matching the console background, prefixed with a terminal prompt '>'. Focus states should not have ring.",
+    "forms": "Use Shadcn Input, Select, Switch for the Server creation wizard and settings properties.",
+    "mod_card": "Compact bento card displaying Mod icon, name, author, and an 'Install/Remove' button.",
+    "metric_card": "Simple card showing key vitals (RAM, Players, CPU) with a subtle sparkline or simple progress bar."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use icons for server status, tab navigation (Terminal, Settings, Package, HardDrive), and Start/Stop/Restart controls."
+  },
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1662531914405-c037eab676b4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHxtaW5lY3JhZnQlMjBsYW5kc2NhcGV8ZW58MHx8fHwxNzg3MjQxNTc5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Minecraft landscape for empty state background or wizard hero area.",
+      "category": "background"
+    }
+  ],
+  "accessibility": {
+    "contrast": "Ensure text meets WCAG AA standards. Text on elevated surfaces must be clearly legible.",
+    "motion": "Respect prefers-reduced-motion. Add aria-hidden='true' to decorative icons.",
+    "focus": "Interactive elements must have focus:ring-2 focus:ring-emerald-500 focus:outline-none."
+  },
+  "instructions_to_main_agent": [
+    "Design a hybrid fullstack dashboard for a Minecraft Linux Host App.",
+    "The UI must be exclusively dark mode (like Aternos), utilizing slate-950, slate-900, and slate-800 for elevation. Pure black is reserved ONLY for the console.",
+    "Provide a robust 'Server Dashboard' displaying a list of all servers with their status, RAM usage, and player count.",
+    "Implement a 'Create Server' Wizard containing steps for Name, Type (Vanilla/Paper/Fabric/Forge), Version, RAM assignment, and Port.",
+    "Build a detailed 'Server View' incorporating tabbed navigation.",
+    "Tabs must include: 'Live Console', 'Settings', 'Mods', and 'Backups'. Prominently feature Start/Stop/Restart controls at the top of the detail view.",
+    "The 'Live Console' tab must mimic a real terminal: JetBrains Mono font, deep black background, green/white text, scrolling output, and an interactive command input field at the bottom.",
+    "The 'Settings' tab should handle numerous server.properties options using appropriate inputs (Shadcn forms, switches for boolean values like pvp and command-blocks, select for difficulty).",
+    "The 'Mod-Manager' tab should display a searchable grid of mod cards, allowing users to install or remove mods.",
+    "Use .js file extension conventions for all React components, as the project uses .js files, not .tsx.",
+    "Use lucide-react for all iconography.",
+    "Do NOT use native HTML <select> or <input type='date'>; strictly use Shadcn components.",
+    "All interactive elements MUST include a 'data-testid' attribute for testing."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic outputs. Avoid this: make creative, distinctive frontends.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Create depth through layered design elements with z-index hierarchy and true grey base surfaces (slate).",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) where appropriate (e.g., sticky headers).",
+    "You MUST NOT apply universal transition (e.g., transition: all). Add transitions for specific properties (transition-transform, transition-colors).",
+    "You MUST NOT center align the app container (.App { text-align: center; }).",
+    "Always use modern button styles (rounded-md or pill) with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters for icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use generous spacing (Tailwind p-6, p-8) to avoid cramped designs.",
+    "Use sonner for toasts notifications.",
+    "Prioritize using pre-existing components from src/components/ui.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
+  ]
+}

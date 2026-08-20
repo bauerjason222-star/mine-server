@@ -1,0 +1,95 @@
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #020617;
+}
+
+code, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.font-display {
+    font-family: 'Cabinet Grotesk', 'Outfit', sans-serif;
+}
+
+@layer base {
+    :root {
+        --background: 222 47% 4%;
+        --foreground: 210 40% 98%;
+        --card: 222 33% 8%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222 33% 8%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 142 71% 45%;
+        --primary-foreground: 222 47% 6%;
+        --secondary: 217 33% 15%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217 33% 15%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 217 33% 17%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217 33% 20%;
+        --input: 217 33% 18%;
+        --ring: 142 71% 45%;
+        --radius: 0.6rem;
+    }
+    .dark {
+        --background: 222 47% 4%;
+        --foreground: 210 40% 98%;
+        --card: 222 33% 8%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222 33% 8%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 142 71% 45%;
+        --primary-foreground: 222 47% 6%;
+        --secondary: 217 33% 15%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217 33% 15%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 217 33% 17%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217 33% 20%;
+        --input: 217 33% 18%;
+        --ring: 142 71% 45%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0f172a; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+@keyframes fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.4s ease-out both; }
