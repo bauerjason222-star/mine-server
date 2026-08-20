@@ -8,6 +8,7 @@ import SettingsTab from "@/components/tabs/SettingsTab";
 import PlayersTab from "@/components/tabs/PlayersTab";
 import ModsTab from "@/components/tabs/ModsTab";
 import BackupsTab from "@/components/tabs/BackupsTab";
+import AutomationTab from "@/components/tabs/AutomationTab";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -16,7 +17,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Square, RotateCw, Trash2, ArrowLeft, Terminal, Settings, Package, HardDrive, Loader2, Users, RefreshCcw } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, ArrowLeft, Terminal, Settings, Package, HardDrive, Loader2, Users, RefreshCcw, Clock } from "lucide-react";
 
 export default function ServerDetail() {
   const { id } = useParams();
@@ -176,6 +177,9 @@ export default function ServerDetail() {
             <TabsTrigger value="backups" data-testid="tab-backups" className="data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-400 gap-1.5">
               <HardDrive className="h-4 w-4" /> Backups
             </TabsTrigger>
+            <TabsTrigger value="automation" data-testid="tab-automation" className="data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-400 gap-1.5">
+              <Clock className="h-4 w-4" /> Automation
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="console" className="mt-5">
@@ -192,6 +196,9 @@ export default function ServerDetail() {
           </TabsContent>
           <TabsContent value="backups" className="mt-5">
             <BackupsTab server={server} />
+          </TabsContent>
+          <TabsContent value="automation" className="mt-5">
+            <AutomationTab server={server} />
           </TabsContent>
         </Tabs>
       </main>

@@ -287,6 +287,18 @@ def install_server(server: dict):
 _JOIN_RE = re.compile(r"\]: (\w+) joined the game")
 _LEFT_RE = re.compile(r"\]: (\w+) left the game")
 _DONE_RE = re.compile(r'\]: Done \(', re.IGNORECASE)
+_ADV_RE = re.compile(r"\]:\s+(\w+) has (?:made the advancement|completed the challenge|reached the goal) (\[[^\]]+\])")
+_DEATH_PHRASES = [
+    "was slain by", "was shot by", "was pummeled by", "was killed by", "was blown up by",
+    "was fireballed by", "was struck by lightning", "was squashed by", "was skewered", "was impaled",
+    "was pricked to death", "was roasted", "was burnt to a crisp", "hit the ground too hard",
+    "fell from a high place", "fell off", "fell out of the world", "fell into a pool", "was doomed to fall",
+    "drowned", "died from dehydration", "died", "experienced kinetic energy", "blew up", "went up in flames",
+    "burned to death", "tried to swim in lava", "walked into fire", "walked into a cactus", "walked into danger",
+    "suffocated in a wall", "was squished", "starved to death", "withered away", "froze to death",
+    "was frozen to death", "was stung to death", "was poked to death", "discovered the floor was lava",
+    "was killed", "was slain", "was shot", "was doomed", "didn't want to live", "left the confines of this world",
+]
 
 
 def _reader_thread(server_id: str, proc):
@@ -296,6 +308,7 @@ def _reader_thread(server_id: str, proc):
             break
         line = raw.rstrip("\n")
         _log(server_id, line)
+        _maybe_discord(rt.get("server"), line)
         if _DONE_RE.search(line):
             rt["status"] = "running"
             rt["message"] = "Running"
@@ -711,3 +724,40 @@ def kick_player(server_id: str, name: str):
     if not _is_running(server_id):
         return {"ok": False, "error": "Server is not running"}
     return send_command(server_id, f"kick {name}")
+
+
+# ---------------------------------------------------------------------------
+# Discord notifications (deaths / advancements)
+# ---------------------------------------------------------------------------
+def send_discord_message(token: str, channel_id: str, content: str):
+    try:
+        r = requests.post(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            headers={"Authorization": f"Bot {token}", "Content-Type": "application/json"},
+            json={"content": content}, timeout=12)
+        ok = r.status_code < 300
+        return {"ok": ok, "status": r.status_code, "body": r.text[:300]}
+    except Exception as e:
+        return {"ok": False, "status": 0, "body": str(e)}
+
+
+def _maybe_discord(server: dict, line: str):
+    dc = (server or {}).get("discord") or {}
+    if not dc.get("enabled") or not dc.get("bot_token") or not dc.get("channel_id"):
+        return
+    msg = None
+    m = _ADV_RE.search(line)
+    if m and dc.get("notify_advancements", True):
+        msg = f":trophy: **{m.group(1)}** earned the advancement **{m.group(2)}**"
+    elif dc.get("notify_deaths", True) and "]: " in line:
+        seg = line.split("]: ", 1)[-1].strip()
+        if seg and not seg.startswith("<") and "joined the game" not in seg and "left the game" not in seg:
+            for ph in _DEATH_PHRASES:
+                if ph in seg:
+                    msg = f":skull: {seg}"
+                    break
+    if msg:
+        threading.Thread(
+            target=send_discord_message,
+            args=(dc["bot_token"], dc["channel_id"], msg),
+            daemon=True).start()

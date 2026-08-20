@@ -15,6 +15,7 @@ from typing import List, Optional, Dict
 from datetime import datetime, timezone
 
 import mc_manager as mc
+import scheduler as sched_mod
 from properties_schema import PROPERTY_SCHEMA, GROUP_ORDER, default_properties
 
 ROOT_DIR = Path(__file__).parent
@@ -54,6 +55,28 @@ class ServerUpdate(BaseModel):
 class PlayerActionBody(BaseModel):
     name: str
     reason: Optional[str] = ""
+
+
+class DiscordConfig(BaseModel):
+    enabled: Optional[bool] = None
+    bot_token: Optional[str] = None
+    channel_id: Optional[str] = None
+    notify_deaths: Optional[bool] = None
+    notify_advancements: Optional[bool] = None
+
+
+class ScheduleCreate(BaseModel):
+    action: str          # restart | backup
+    mode: str = "daily"  # daily | interval
+    time: Optional[str] = "04:00"
+    interval_hours: Optional[int] = 6
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    time: Optional[str] = None
+    interval_hours: Optional[int] = None
 
 
 class PropertiesUpdate(BaseModel):
@@ -149,6 +172,9 @@ async def create_server(body: ServerCreate):
         "port": port,
         "properties": default_properties(),
         "auto_restart": False,
+        "discord": {"enabled": False, "bot_token": "", "channel_id": "",
+                    "notify_deaths": True, "notify_advancements": True},
+        "schedules": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "jar": None,
         "start_type": "jar",
@@ -197,6 +223,7 @@ async def update_server(server_id: str, body: ServerUpdate):
 @api_router.delete("/servers/{server_id}")
 async def delete_server(server_id: str):
     await get_server_or_404(server_id)
+    sched_mod.remove_server(server_id)
     mc.delete_server_files(server_id)
     await db.servers.delete_one({"id": server_id})
     return {"ok": True}
@@ -345,6 +372,114 @@ async def console_ws(websocket: WebSocket, server_id: str):
         return
 
 
+# --- Discord notifications ---
+@api_router.get("/servers/{server_id}/discord")
+async def discord_get(server_id: str):
+    s = await get_server_or_404(server_id)
+    dc = s.get("discord", {}) or {}
+    return {
+        "enabled": dc.get("enabled", False),
+        "channel_id": dc.get("channel_id", ""),
+        "notify_deaths": dc.get("notify_deaths", True),
+        "notify_advancements": dc.get("notify_advancements", True),
+        "has_token": bool(dc.get("bot_token")),
+    }
+
+
+@api_router.put("/servers/{server_id}/discord")
+async def discord_save(server_id: str, body: DiscordConfig):
+    s = await get_server_or_404(server_id)
+    dc = s.get("discord", {}) or {}
+    if body.enabled is not None:
+        dc["enabled"] = body.enabled
+    if body.channel_id is not None:
+        dc["channel_id"] = body.channel_id.strip()
+    if body.notify_deaths is not None:
+        dc["notify_deaths"] = body.notify_deaths
+    if body.notify_advancements is not None:
+        dc["notify_advancements"] = body.notify_advancements
+    # Only overwrite token if a non-empty value was supplied
+    if body.bot_token:
+        dc["bot_token"] = body.bot_token.strip()
+    await db.servers.update_one({"id": server_id}, {"$set": {"discord": dc}})
+    rt = mc.RUNTIME.get(server_id)
+    if rt and rt.get("server"):
+        rt["server"]["discord"] = dc
+    return {"ok": True, "has_token": bool(dc.get("bot_token"))}
+
+
+@api_router.post("/servers/{server_id}/discord/test")
+async def discord_test(server_id: str):
+    s = await get_server_or_404(server_id)
+    dc = s.get("discord", {}) or {}
+    if not dc.get("bot_token") or not dc.get("channel_id"):
+        raise HTTPException(400, "Set a bot token and channel ID first")
+    res = mc.send_discord_message(dc["bot_token"], dc["channel_id"],
+                                  f":white_check_mark: MineHost is connected to **{s['name']}**!")
+    if not res["ok"]:
+        raise HTTPException(400, f"Discord error ({res['status']}): {res['body']}")
+    return {"ok": True}
+
+
+# --- Scheduled tasks ---
+@api_router.get("/servers/{server_id}/schedules")
+async def schedules_list(server_id: str):
+    s = await get_server_or_404(server_id)
+    return {"schedules": s.get("schedules", [])}
+
+
+@api_router.post("/servers/{server_id}/schedules")
+async def schedules_add(server_id: str, body: ScheduleCreate):
+    if body.action not in ("restart", "backup"):
+        raise HTTPException(400, "Invalid action")
+    if body.mode not in ("daily", "interval"):
+        raise HTTPException(400, "Invalid mode")
+    s = await get_server_or_404(server_id)
+    schedules = s.get("schedules", [])
+    entry = {
+        "id": str(uuid.uuid4()),
+        "action": body.action,
+        "mode": body.mode,
+        "time": body.time or "04:00",
+        "interval_hours": int(body.interval_hours or 6),
+        "enabled": body.enabled,
+    }
+    schedules.append(entry)
+    await db.servers.update_one({"id": server_id}, {"$set": {"schedules": schedules}})
+    sched_mod.reload_server(server_id)
+    return {"ok": True, "schedules": schedules}
+
+
+@api_router.put("/servers/{server_id}/schedules/{sched_id}")
+async def schedules_update(server_id: str, sched_id: str, body: ScheduleUpdate):
+    s = await get_server_or_404(server_id)
+    schedules = s.get("schedules", [])
+    found = False
+    for e in schedules:
+        if e["id"] == sched_id:
+            found = True
+            if body.enabled is not None:
+                e["enabled"] = body.enabled
+            if body.time is not None:
+                e["time"] = body.time
+            if body.interval_hours is not None:
+                e["interval_hours"] = int(body.interval_hours)
+    if not found:
+        raise HTTPException(404, "Schedule not found")
+    await db.servers.update_one({"id": server_id}, {"$set": {"schedules": schedules}})
+    sched_mod.reload_server(server_id)
+    return {"ok": True, "schedules": schedules}
+
+
+@api_router.delete("/servers/{server_id}/schedules/{sched_id}")
+async def schedules_delete(server_id: str, sched_id: str):
+    s = await get_server_or_404(server_id)
+    schedules = [e for e in s.get("schedules", []) if e["id"] != sched_id]
+    await db.servers.update_one({"id": server_id}, {"$set": {"schedules": schedules}})
+    sched_mod.reload_server(server_id)
+    return {"ok": True, "schedules": schedules}
+
+
 # --- mods ---
 @api_router.get("/servers/{server_id}/mods/search")
 async def mods_search(server_id: str, q: str = "", ):
@@ -430,6 +565,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _start_scheduler():
+    try:
+        sched_mod.start()
+        logger.info("Scheduler started")
+    except Exception as e:
+        logger.error(f"Scheduler start failed: {e}")
 
 
 @app.on_event("shutdown")
