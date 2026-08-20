@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Clock, Plus, Trash2, Loader2, RotateCw, HardDrive, MessageSquare, Send, Save, Skull, Trophy,
+  Clock, Plus, Trash2, Loader2, RotateCw, HardDrive, MessageSquare, Send, Save, Skull, Trophy, Power, Users,
 } from "lucide-react";
 
 export default function AutomationTab({ server }) {
@@ -152,7 +152,7 @@ function SchedulesCard({ server }) {
 
 /* -------------------------------- Discord -------------------------------- */
 function DiscordCard({ server }) {
-  const [cfg, setCfg] = useState({ enabled: false, channel_id: "", notify_deaths: true, notify_advancements: true, has_token: false });
+  const [cfg, setCfg] = useState({ enabled: false, channel_id: "", notify_deaths: true, notify_advancements: true, notify_status: true, notify_joins: true, has_token: false });
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -175,6 +175,8 @@ function DiscordCard({ server }) {
         channel_id: cfg.channel_id,
         notify_deaths: cfg.notify_deaths,
         notify_advancements: cfg.notify_advancements,
+        notify_status: cfg.notify_status,
+        notify_joins: cfg.notify_joins,
       };
       if (token.trim()) body.bot_token = token.trim();
       const r = await api.put(`/servers/${server.id}/discord`, body);
@@ -239,6 +241,16 @@ function DiscordCard({ server }) {
             <Label className="text-slate-300 text-sm flex items-center gap-1.5"><Trophy className="h-4 w-4 text-amber-400" /> Advancements</Label>
             <Switch data-testid="discord-advancements-switch" checked={cfg.notify_advancements}
               onCheckedChange={(v) => setCfg((c) => ({ ...c, notify_advancements: v }))} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-slate-950/50 px-4 py-3">
+            <Label className="text-slate-300 text-sm flex items-center gap-1.5"><Power className="h-4 w-4 text-emerald-400" /> Server status</Label>
+            <Switch data-testid="discord-status-switch" checked={cfg.notify_status}
+              onCheckedChange={(v) => setCfg((c) => ({ ...c, notify_status: v }))} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-slate-950/50 px-4 py-3">
+            <Label className="text-slate-300 text-sm flex items-center gap-1.5"><Users className="h-4 w-4 text-sky-400" /> Join / Leave</Label>
+            <Switch data-testid="discord-joins-switch" checked={cfg.notify_joins}
+              onCheckedChange={(v) => setCfg((c) => ({ ...c, notify_joins: v }))} />
           </div>
         </div>
 

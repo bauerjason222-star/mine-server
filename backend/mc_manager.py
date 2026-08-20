@@ -313,12 +313,16 @@ def _reader_thread(server_id: str, proc):
             rt["status"] = "running"
             rt["message"] = "Running"
             rt["restart_count"] = 0
+            _discord_event(rt.get("server"), "status",
+                           f":green_circle: **{(rt.get('server') or {}).get('name', 'Server')}** is now online!")
         m = _JOIN_RE.search(line)
         if m:
             rt["players"].add(m.group(1))
+            _discord_event(rt.get("server"), "joins", f":inbox_tray: **{m.group(1)}** joined the game")
         m = _LEFT_RE.search(line)
         if m:
             rt["players"].discard(m.group(1))
+            _discord_event(rt.get("server"), "joins", f":outbox_tray: **{m.group(1)}** left the game")
     proc.wait()
     code = proc.returncode
     intentional = rt.get("intentional_stop")
@@ -328,10 +332,14 @@ def _reader_thread(server_id: str, proc):
         rt["status"] = "stopped"
         rt["message"] = "Stopped"
         _log(server_id, "=== Server stopped. ===")
+        _discord_event(rt.get("server"), "status",
+                       f":red_circle: **{(rt.get('server') or {}).get('name', 'Server')}** has stopped.")
     else:
         rt["status"] = "crashed"
         rt["message"] = f"Crashed (exit code {code})"
         _log(server_id, f"=== Server crashed unexpectedly (exit code {code}). ===")
+        _discord_event(rt.get("server"), "status",
+                       f":boom: **{(rt.get('server') or {}).get('name', 'Server')}** crashed unexpectedly (exit code {code}).")
         if rt.get("auto_restart") and rt.get("restart_count", 0) < 3:
             rt["restart_count"] = rt.get("restart_count", 0) + 1
             n = rt["restart_count"]
@@ -379,6 +387,7 @@ def start_server(server: dict, manual: bool = True):
     if manual:
         rt["restart_count"] = 0
     _log(sid, f"=== Starting server: {' '.join(cmd)} ===")
+    _discord_event(server, "status", f":yellow_circle: **{server.get('name', 'Server')}** is starting...")
     try:
         proc = subprocess.Popen(
             cmd, cwd=str(sdir),
@@ -739,6 +748,20 @@ def send_discord_message(token: str, channel_id: str, content: str):
         return {"ok": ok, "status": r.status_code, "body": r.text[:300]}
     except Exception as e:
         return {"ok": False, "status": 0, "body": str(e)}
+
+
+def _discord_event(server: dict, flag_key: str, content: str):
+    dc = (server or {}).get("discord") or {}
+    if not dc.get("enabled") or not dc.get("bot_token") or not dc.get("channel_id"):
+        return
+    flag_map = {"status": "notify_status", "joins": "notify_joins"}
+    key = flag_map.get(flag_key)
+    if key and not dc.get(key, True):
+        return
+    threading.Thread(
+        target=send_discord_message,
+        args=(dc["bot_token"], dc["channel_id"], content),
+        daemon=True).start()
 
 
 def _maybe_discord(server: dict, line: str):

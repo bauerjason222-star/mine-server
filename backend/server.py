@@ -63,6 +63,8 @@ class DiscordConfig(BaseModel):
     channel_id: Optional[str] = None
     notify_deaths: Optional[bool] = None
     notify_advancements: Optional[bool] = None
+    notify_status: Optional[bool] = None
+    notify_joins: Optional[bool] = None
 
 
 class ScheduleCreate(BaseModel):
@@ -173,7 +175,8 @@ async def create_server(body: ServerCreate):
         "properties": default_properties(),
         "auto_restart": False,
         "discord": {"enabled": False, "bot_token": "", "channel_id": "",
-                    "notify_deaths": True, "notify_advancements": True},
+                    "notify_deaths": True, "notify_advancements": True,
+                    "notify_status": True, "notify_joins": True},
         "schedules": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "jar": None,
@@ -382,6 +385,8 @@ async def discord_get(server_id: str):
         "channel_id": dc.get("channel_id", ""),
         "notify_deaths": dc.get("notify_deaths", True),
         "notify_advancements": dc.get("notify_advancements", True),
+        "notify_status": dc.get("notify_status", True),
+        "notify_joins": dc.get("notify_joins", True),
         "has_token": bool(dc.get("bot_token")),
     }
 
@@ -398,6 +403,10 @@ async def discord_save(server_id: str, body: DiscordConfig):
         dc["notify_deaths"] = body.notify_deaths
     if body.notify_advancements is not None:
         dc["notify_advancements"] = body.notify_advancements
+    if body.notify_status is not None:
+        dc["notify_status"] = body.notify_status
+    if body.notify_joins is not None:
+        dc["notify_joins"] = body.notify_joins
     # Only overwrite token if a non-empty value was supplied
     if body.bot_token:
         dc["bot_token"] = body.bot_token.strip()

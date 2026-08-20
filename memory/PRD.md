@@ -35,6 +35,9 @@ Erstelle mir eine Minecraft Host App für Linux, wo ich Server erstellen, bearbe
 - **Scheduled tasks** (Automation tab): per-server auto-restart & backup schedules via APScheduler (`scheduler.py`). Modes: daily at HH:MM (CronTrigger) or every N hours (IntervalTrigger). Jobs persisted in `server.schedules`, reloaded on startup. Endpoints: GET/POST/PUT/DELETE `/api/servers/{id}/schedules`. Verified endpoints + scheduler boot.
 - **Discord notifications** (Automation tab): user pastes Bot Token + Channel ID in-app (stored per server, token masked in GET via `has_token`). Backend posts to `POST discord.com/api/v10/channels/{id}/messages` with `Authorization: Bot <token>`. Reader thread detects deaths (phrase list) and advancements (regex) and posts `:skull:` / `:trophy:` messages. Endpoints: GET/PUT `/api/servers/{id}/discord`, POST `/discord/test`. Verified config save/mask + test endpoint path. NOTE: live death→Discord message not E2E-tested (needs user's real bot token).
 
+## Update (2026-08-20 #4)
+- **Discord server-status + join/leave events**: reader thread now posts to Discord on server starting (:yellow_circle:), online (:green_circle:), stopped (:red_circle:), crashed (:boom:), and player join (:inbox_tray:) / leave (:outbox_tray:). Two new per-server toggles `notify_status` and `notify_joins` (defaults true) alongside deaths/advancements. UI: 4 toggles in Discord card. Verified config persistence; live posting requires user's real bot token.
+
 ## Known Notes / Limitations
 - External players cannot connect through the preview ingress (port 25565 not exposed); the server process genuinely runs — works fully on a real Linux host.
 - Status is in-memory; on backend restart running servers show "stopped" (java process is killed by supervisor).
