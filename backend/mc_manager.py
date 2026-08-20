@@ -288,6 +288,7 @@ _JOIN_RE = re.compile(r"\]: (\w+) joined the game")
 _LEFT_RE = re.compile(r"\]: (\w+) left the game")
 _DONE_RE = re.compile(r'\]: Done \(', re.IGNORECASE)
 _ADV_RE = re.compile(r"\]:\s+(\w+) has (?:made the advancement|completed the challenge|reached the goal) (\[[^\]]+\])")
+_CHAT_RE = re.compile(r"\]: <(\w+)> (.*)$")
 _DEATH_PHRASES = [
     "was slain by", "was shot by", "was pummeled by", "was killed by", "was blown up by",
     "was fireballed by", "was struck by lightning", "was squashed by", "was skewered", "was impaled",
@@ -323,6 +324,9 @@ def _reader_thread(server_id: str, proc):
         if m:
             rt["players"].discard(m.group(1))
             _discord_event(rt.get("server"), "joins", f":outbox_tray: **{m.group(1)}** left the game")
+        cm = _CHAT_RE.search(line)
+        if cm:
+            _discord_event(rt.get("server"), "chat", f":speech_balloon: **{cm.group(1)}**: {cm.group(2)}")
     proc.wait()
     code = proc.returncode
     intentional = rt.get("intentional_stop")
@@ -403,6 +407,7 @@ def start_server(server: dict, manual: bool = True):
     t = threading.Thread(target=_reader_thread, args=(sid, proc), daemon=True)
     t.start()
     rt["thread"] = t
+    start_bridge_if_needed(server)
     return {"ok": True}
 
 
@@ -754,7 +759,7 @@ def _discord_event(server: dict, flag_key: str, content: str):
     dc = (server or {}).get("discord") or {}
     if not dc.get("enabled") or not dc.get("bot_token") or not dc.get("channel_id"):
         return
-    flag_map = {"status": "notify_status", "joins": "notify_joins"}
+    flag_map = {"status": "notify_status", "joins": "notify_joins", "chat": "notify_chat"}
     key = flag_map.get(flag_key)
     if key and not dc.get(key, True):
         return
@@ -784,3 +789,78 @@ def _maybe_discord(server: dict, line: str):
             target=send_discord_message,
             args=(dc["bot_token"], dc["channel_id"], msg),
             daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Discord -> in-game chat bridge (channel polling)
+# ---------------------------------------------------------------------------
+def _channel_latest_id(token: str, channel_id: str):
+    try:
+        r = requests.get(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            headers={"Authorization": f"Bot {token}"}, params={"limit": 1}, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if data:
+                return data[0]["id"]
+    except Exception:
+        pass
+    return None
+
+
+def _bridge_poller(server_id: str):
+    rt = RUNTIME.get(server_id)
+    if not rt:
+        return
+    dc0 = (rt.get("server") or {}).get("discord") or {}
+    rt["discord_last_id"] = _channel_latest_id(dc0.get("bot_token"), dc0.get("channel_id"))
+    _log(server_id, "[discord] Chat bridge active (Discord -> game).")
+    while True:
+        rt = RUNTIME.get(server_id)
+        if not rt or rt.get("status") not in ("running", "starting"):
+            break
+        dc = (rt.get("server") or {}).get("discord") or {}
+        if not (dc.get("enabled") and dc.get("bridge_from_discord")
+                and dc.get("bot_token") and dc.get("channel_id")):
+            break
+        token, ch = dc["bot_token"], dc["channel_id"]
+        try:
+            if not rt.get("discord_last_id"):
+                rt["discord_last_id"] = _channel_latest_id(token, ch)
+                time.sleep(3)
+                continue
+            r = requests.get(
+                f"https://discord.com/api/v10/channels/{ch}/messages",
+                headers={"Authorization": f"Bot {token}"},
+                params={"after": rt["discord_last_id"], "limit": 20}, timeout=10)
+            if r.status_code == 200:
+                msgs = list(reversed(r.json()))  # oldest first
+                for m in msgs:
+                    rt["discord_last_id"] = m["id"]
+                    author = m.get("author", {})
+                    if author.get("bot"):
+                        continue
+                    content = (m.get("content") or "").replace("\n", " ").strip()
+                    if not content:
+                        continue
+                    name = author.get("global_name") or author.get("username") or "Discord"
+                    send_command(server_id, f"say [Discord] {name}: {content}")
+        except Exception:
+            pass
+        time.sleep(3)
+    _log(server_id, "[discord] Chat bridge stopped.")
+    if rt:
+        rt["bridge_thread"] = None
+
+
+def start_bridge_if_needed(server: dict):
+    sid = server["id"]
+    rt = RUNTIME.get(sid)
+    if not rt:
+        return
+    dc = server.get("discord") or {}
+    if dc.get("enabled") and dc.get("bridge_from_discord") and dc.get("bot_token") and dc.get("channel_id"):
+        if not rt.get("bridge_thread") or not rt["bridge_thread"].is_alive():
+            t = threading.Thread(target=_bridge_poller, args=(sid,), daemon=True)
+            rt["bridge_thread"] = t
+            t.start()

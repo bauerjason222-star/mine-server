@@ -38,6 +38,9 @@ Erstelle mir eine Minecraft Host App für Linux, wo ich Server erstellen, bearbe
 ## Update (2026-08-20 #4)
 - **Discord server-status + join/leave events**: reader thread now posts to Discord on server starting (:yellow_circle:), online (:green_circle:), stopped (:red_circle:), crashed (:boom:), and player join (:inbox_tray:) / leave (:outbox_tray:). Two new per-server toggles `notify_status` and `notify_joins` (defaults true) alongside deaths/advancements. UI: 4 toggles in Discord card. Verified config persistence; live posting requires user's real bot token.
 
+## Update (2026-08-20 #5)
+- **Two-way Discord chat bridge**: (a) in-game chat → Discord via `_CHAT_RE` (`<player> msg`) posting `:speech_balloon:` (toggle `notify_chat`); (b) Discord → in-game via `_bridge_poller` polling `GET /channels/{id}/messages?after=<last_id>` every 3s while running, skipping bot authors, injecting `say [Discord] <user>: <msg>` (toggle `bridge_from_discord`). Poller starts in `start_server` / on discord-save when running; baseline last_id prevents history replay; relayed `say` lines don't match `_CHAT_RE` so no echo loop (regex verified). UI: "Two-way Chat Bridge" section (2 toggles). Needs bot Read Message History + Message Content Intent; live relay needs user's real token (not E2E-tested).
+
 ## Known Notes / Limitations
 - External players cannot connect through the preview ingress (port 25565 not exposed); the server process genuinely runs — works fully on a real Linux host.
 - Status is in-memory; on backend restart running servers show "stopped" (java process is killed by supervisor).

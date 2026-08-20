@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Clock, Plus, Trash2, Loader2, RotateCw, HardDrive, MessageSquare, Send, Save, Skull, Trophy, Power, Users,
+  Clock, Plus, Trash2, Loader2, RotateCw, HardDrive, MessageSquare, Send, Save, Skull, Trophy, Power, Users, ArrowLeftRight,
 } from "lucide-react";
 
 export default function AutomationTab({ server }) {
@@ -152,7 +152,7 @@ function SchedulesCard({ server }) {
 
 /* -------------------------------- Discord -------------------------------- */
 function DiscordCard({ server }) {
-  const [cfg, setCfg] = useState({ enabled: false, channel_id: "", notify_deaths: true, notify_advancements: true, notify_status: true, notify_joins: true, has_token: false });
+  const [cfg, setCfg] = useState({ enabled: false, channel_id: "", notify_deaths: true, notify_advancements: true, notify_status: true, notify_joins: true, notify_chat: true, bridge_from_discord: true, has_token: false });
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -177,6 +177,8 @@ function DiscordCard({ server }) {
         notify_advancements: cfg.notify_advancements,
         notify_status: cfg.notify_status,
         notify_joins: cfg.notify_joins,
+        notify_chat: cfg.notify_chat,
+        bridge_from_discord: cfg.bridge_from_discord,
       };
       if (token.trim()) body.bot_token = token.trim();
       const r = await api.put(`/servers/${server.id}/discord`, body);
@@ -252,6 +254,23 @@ function DiscordCard({ server }) {
             <Switch data-testid="discord-joins-switch" checked={cfg.notify_joins}
               onCheckedChange={(v) => setCfg((c) => ({ ...c, notify_joins: v }))} />
           </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">
+            <ArrowLeftRight className="h-4 w-4 text-indigo-400" /> Two-way Chat Bridge
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-slate-300 text-sm flex items-center gap-1.5"><MessageSquare className="h-4 w-4 text-emerald-400" /> In-game chat → Discord</Label>
+            <Switch data-testid="discord-chat-switch" checked={cfg.notify_chat}
+              onCheckedChange={(v) => setCfg((c) => ({ ...c, notify_chat: v }))} />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-slate-300 text-sm flex items-center gap-1.5"><MessageSquare className="h-4 w-4 text-indigo-400" /> Discord → in-game chat</Label>
+            <Switch data-testid="discord-bridge-switch" checked={cfg.bridge_from_discord}
+              onCheckedChange={(v) => setCfg((c) => ({ ...c, bridge_from_discord: v }))} />
+          </div>
+          <p className="text-[11px] text-slate-600">Bridge relays messages while the server is running. Needs the bot's "Read Message History" permission &amp; Message Content Intent.</p>
         </div>
 
         <div className="flex gap-2 pt-1">

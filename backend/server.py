@@ -65,6 +65,8 @@ class DiscordConfig(BaseModel):
     notify_advancements: Optional[bool] = None
     notify_status: Optional[bool] = None
     notify_joins: Optional[bool] = None
+    notify_chat: Optional[bool] = None
+    bridge_from_discord: Optional[bool] = None
 
 
 class ScheduleCreate(BaseModel):
@@ -176,7 +178,8 @@ async def create_server(body: ServerCreate):
         "auto_restart": False,
         "discord": {"enabled": False, "bot_token": "", "channel_id": "",
                     "notify_deaths": True, "notify_advancements": True,
-                    "notify_status": True, "notify_joins": True},
+                    "notify_status": True, "notify_joins": True,
+                    "notify_chat": True, "bridge_from_discord": True},
         "schedules": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "jar": None,
@@ -387,6 +390,8 @@ async def discord_get(server_id: str):
         "notify_advancements": dc.get("notify_advancements", True),
         "notify_status": dc.get("notify_status", True),
         "notify_joins": dc.get("notify_joins", True),
+        "notify_chat": dc.get("notify_chat", True),
+        "bridge_from_discord": dc.get("bridge_from_discord", True),
         "has_token": bool(dc.get("bot_token")),
     }
 
@@ -407,6 +412,10 @@ async def discord_save(server_id: str, body: DiscordConfig):
         dc["notify_status"] = body.notify_status
     if body.notify_joins is not None:
         dc["notify_joins"] = body.notify_joins
+    if body.notify_chat is not None:
+        dc["notify_chat"] = body.notify_chat
+    if body.bridge_from_discord is not None:
+        dc["bridge_from_discord"] = body.bridge_from_discord
     # Only overwrite token if a non-empty value was supplied
     if body.bot_token:
         dc["bot_token"] = body.bot_token.strip()
@@ -414,6 +423,8 @@ async def discord_save(server_id: str, body: DiscordConfig):
     rt = mc.RUNTIME.get(server_id)
     if rt and rt.get("server"):
         rt["server"]["discord"] = dc
+        if rt.get("status") in ("running", "starting"):
+            mc.start_bridge_if_needed(rt["server"])
     return {"ok": True, "has_token": bool(dc.get("bot_token"))}
 
 
